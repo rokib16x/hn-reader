@@ -1,0 +1,1095 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hacker News — Reader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* ==========================================================================
+   Surfaces — four distinct planes so chrome, content and gutters separate:
+     shell   chrome behind everything (masthead, sidebar)
+     bg      the reading surface
+     panel   inset bands (rank gutter, control strips)
+     raise   things that sit above the page (menus, toasts)
+   ========================================================================== */
+:root{
+  --shell:#EFEDE8; --bg:#FFFFFF; --panel:#F7F5F1; --raise:#FFFFFF;
+  --line:#E9E5DE; --line-2:#D3CDC3;
+  --text:#121110; --muted:#5A564E; --faint:#948F85;
+  --accent:#DE3F10; --accent-2:#B5310A; --accent-tint:rgba(222,63,16,.08);
+  --ok:#3F6212;
+  --sans:"Manrope",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --gut:62px; --topbar:58px;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --shell:#0A0A09; --bg:#151514; --panel:#1D1D1B; --raise:#252523;
+    --line:#282825; --line-2:#3B3B37;
+    --text:#F5F4F1; --muted:#ADA89F; --faint:#787369;
+    --accent:#FF5C33; --accent-2:#FF8057; --accent-tint:rgba(255,92,51,.11);
+    --ok:#9BBF6A;
+  }
+}
+:root[data-theme="dark"]{
+  --shell:#0A0A09; --bg:#151514; --panel:#1D1D1B; --raise:#252523;
+  --line:#282825; --line-2:#3B3B37;
+  --text:#F5F4F1; --muted:#ADA89F; --faint:#787369;
+  --accent:#FF5C33; --accent-2:#FF8057; --accent-tint:rgba(255,92,51,.11);
+  --ok:#9BBF6A;
+}
+
+*{box-sizing:border-box}
+/* Reserve the scrollbar track so short and tall pages don't shift sideways. */
+html{scrollbar-gutter:stable}
+html,body{height:100%}
+body{
+  margin:0; background:var(--shell); color:var(--text);
+  font-family:var(--sans); font-size:15px; line-height:1.55;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+input{font:inherit;color:inherit}
+img{max-width:100%}
+[hidden]{display:none!important}
+::selection{background:var(--accent);color:#fff}
+:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+
+.lbl{
+  font-family:var(--mono); font-size:10.5px; font-weight:400;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--faint);
+}
+
+/* ==========================================================================
+   Masthead — chrome plane, separated by a heavier rule
+   ========================================================================== */
+.top{
+  position:sticky; top:env(safe-area-inset-top,0px); z-index:60;
+  background:var(--shell); border-bottom:1px solid var(--line-2);
+}
+.top-in{max-width:1400px;margin:0 auto;height:var(--topbar);display:flex;align-items:center}
+.brand{
+  display:flex;align-items:center;gap:11px;flex-shrink:0;
+  width:232px;height:100%;padding:0 22px;border-right:1px solid var(--line-2);
+}
+.mark{
+  width:25px;height:25px;background:var(--accent);color:#fff;border-radius:2px;
+  display:grid;place-items:center;font-family:var(--mono);font-weight:500;font-size:13px;
+}
+.brand b{font-weight:600;font-size:15px;letter-spacing:-.025em}
+
+.search{flex:1;min-width:0;position:relative;display:flex;align-items:center;height:100%;padding:0 20px}
+.search svg{position:absolute;left:20px;width:14px;height:14px;color:var(--faint);pointer-events:none}
+#q{width:100%;background:none;border:0;padding:8px 44px 8px 24px;font-size:14px;letter-spacing:-.01em}
+#q::placeholder{color:var(--faint)}
+#q:focus{outline:none}
+.search:focus-within{background:var(--bg);box-shadow:inset 0 -2px 0 var(--accent)}
+.search .k{position:absolute;right:20px;pointer-events:none}
+
+.top-act{display:flex;align-items:center;gap:8px;flex-shrink:0;padding:0 20px;height:100%;border-left:1px solid var(--line-2)}
+.ib{width:30px;height:30px;display:grid;place-items:center;color:var(--muted);border-radius:2px}
+.ib:hover{color:var(--text);background:var(--panel)}
+.lnk{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);border:1px solid var(--line-2);padding:7px 11px;border-radius:2px;white-space:nowrap;
+}
+.lnk:hover{border-color:var(--accent);color:var(--text)}
+.burger{display:none}
+
+/* ==========================================================================
+   Shell — sidebar is chrome, main is the reading surface
+   ========================================================================== */
+.shell{max-width:1400px;margin:0 auto;display:grid;grid-template-columns:232px minmax(0,1fr);align-items:start}
+.side{
+  position:sticky;top:var(--topbar);background:var(--shell);
+  max-height:calc(100vh - var(--topbar));overflow-y:auto;padding-bottom:30px;
+}
+/* The divider lives on the content column, not the sidebar, so it runs the
+   full height of the page instead of stopping where the sidebar ends. */
+.main{
+  background:var(--bg);border-left:1px solid var(--line-2);border-right:1px solid var(--line-2);
+  min-height:calc(100vh - var(--topbar));min-width:0;
+}
+
+/* Sidebar sections — each headed by a tinted strip so groups separate */
+.sec-h{
+  display:block;padding:11px 22px;background:var(--panel);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+}
+.nav{display:flex;flex-direction:column;padding:6px 0}
+.nav a{
+  display:flex;align-items:center;gap:11px;padding:8px 22px;
+  color:var(--muted);font-size:14px;font-weight:500;letter-spacing:-.012em;
+  border-left:2px solid transparent;
+}
+.nav a:hover{background:var(--panel);color:var(--text)}
+.nav a.on{background:var(--bg);color:var(--text);border-left-color:var(--accent);font-weight:600}
+.nav a i{font-style:normal;font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:0;min-width:14px}
+.nav a.on i{color:var(--accent)}
+.sidenote{padding:20px 22px;border-top:1px solid var(--line)}
+.sidenote p{margin:0 0 12px;font-size:13px;line-height:1.6;color:var(--muted);font-weight:300}
+
+/* ==========================================================================
+   Control strip — inset band at the head of a view
+   ========================================================================== */
+.bar{
+  display:flex;align-items:center;gap:22px;flex-wrap:wrap;
+  padding:12px 26px;background:var(--panel);border-bottom:1px solid var(--line-2);
+  position:sticky;top:var(--topbar);z-index:40;
+}
+.opts{display:flex;gap:4px;flex-wrap:wrap}
+.opts button{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);padding:5px 9px;border:1px solid transparent;border-radius:2px;
+}
+.opts button:hover{color:var(--text);border-color:var(--line-2)}
+.opts button.on{color:var(--bg);background:var(--text);border-color:var(--text);font-weight:500}
+.grow{flex:1 1 auto}
+.note{font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--faint)}
+.strip{padding:12px 26px;border-bottom:1px solid var(--line);background:var(--bg)}
+.pad{padding:26px}
+/* Hold the page height steady between skeleton and loaded rows, so the
+   sticky sidebar and control strip never bounce on a filter change. */
+#slot{display:block;min-height:calc(100vh - var(--topbar) - 52px)}
+
+/* ==========================================================================
+   Rows — the score column is aligned, not filled. A tinted band per row read
+   as a spreadsheet; a quiet right-aligned column keeps the rhythm without it.
+   ========================================================================== */
+.rows{display:flex;flex-direction:column}
+.row{
+  display:grid;grid-template-columns:var(--gut) minmax(0,1fr) 34px 38px;
+  border-bottom:1px solid var(--line);position:relative;
+}
+.row:last-child{border-bottom:0}
+.gut{padding:16px 14px 16px 0;text-align:right;border-right:1px solid var(--line)}
+.gut .rk{display:block;font-family:var(--mono);font-size:9.5px;color:var(--faint);letter-spacing:.08em;margin-bottom:1px}
+.gut .sc{
+  display:block;font-family:var(--mono);font-size:15px;font-weight:500;line-height:1.2;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--text);
+}
+.gut .pl{display:block;font-family:var(--mono);font-size:8px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin-top:1px}
+/* Reserved for genuine outliers only, so the accent stays rare. */
+.row.hot .sc{color:var(--accent)}
+.rbody{padding:15px 20px;min-width:0}
+.row:hover{background:var(--panel)}
+
+.hl{margin:0;font-size:15.5px;font-weight:500;line-height:1.42;letter-spacing:-.016em}
+.hl a:hover{color:var(--accent-2)}
+.row.seen .hl a{color:var(--muted)}
+.dom{font-family:var(--mono);font-size:10.5px;letter-spacing:-.01em;color:var(--faint);margin-left:8px;white-space:nowrap}
+.sub{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.sub a{color:var(--muted)}
+.sub a:hover{color:var(--text);text-decoration:underline;text-underline-offset:3px}
+.sub s{text-decoration:none;opacity:.35}
+.tag{border:1px solid var(--line-2);border-radius:2px;padding:1px 5px;font-size:8.5px;letter-spacing:.11em;text-transform:uppercase}
+.bm{width:34px;display:grid;place-items:center;color:transparent;align-self:stretch}
+.row:hover .bm{color:var(--faint)}
+.bm:hover{background:var(--panel);color:var(--text)}
+.bm.on,.row:hover .bm.on{color:var(--accent)}
+.rows.cards .bm{position:absolute;top:8px;right:8px;width:28px;height:28px;align-self:auto}
+.cnt{margin-left:auto;font-family:var(--mono);font-size:10px;font-weight:400;color:var(--faint)}
+.nav a.on .cnt{color:var(--accent)}
+.follow{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+  border:1px solid var(--line-2);border-radius:2px;padding:7px 11px;color:var(--muted);white-space:nowrap;
+}
+.follow:hover{border-color:var(--text);color:var(--text)}
+.follow.on{background:var(--text);color:var(--bg);border-color:var(--text)}
+.dots{width:38px;display:grid;place-items:center;color:transparent;align-self:stretch}
+.row:hover .dots{color:var(--faint)}
+.dots:hover{background:var(--panel);color:var(--text)}
+
+/* Grid — equal-height cells, score inline above the headline rather than a
+   vertical band down the side of every card. */
+.rows.cards{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));
+  grid-auto-rows:1fr;gap:1px;background:var(--line);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+}
+.rows.cards .row{
+  display:flex;flex-direction:column;border-bottom:0;background:var(--bg);
+}
+.rows.cards .gut{
+  display:flex;align-items:baseline;gap:6px;text-align:left;
+  padding:15px 20px 0;border-right:0;
+}
+.rows.cards .gut .rk{display:none}
+.rows.cards .gut .sc{font-size:12.5px}
+.rows.cards .gut .pl{margin:0;font-size:8px}
+.rows.cards .rbody{padding:7px 20px 16px}
+.rows.cards .dots{display:none}
+
+/* ==========================================================================
+   Menu / toast
+   ========================================================================== */
+.pop{position:absolute;z-index:80;right:6px;min-width:198px;background:var(--raise);border:1px solid var(--line-2);border-radius:2px;padding:4px;box-shadow:0 10px 30px -16px rgba(0,0,0,.55)}
+.pop button{display:block;width:100%;text-align:left;padding:7px 10px;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pop button:hover{background:var(--panel);color:var(--text)}
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:200;
+  background:var(--raise);border:1px solid var(--line-2);border-radius:2px;padding:11px 16px;
+  max-width:min(92vw,420px);font-family:var(--mono);font-size:11px;letter-spacing:.05em;
+  box-shadow:0 12px 34px -16px rgba(0,0,0,.6);
+}
+
+/* ==========================================================================
+   Article
+   ========================================================================== */
+.back{display:inline-block;margin-bottom:20px}
+.back:hover{color:var(--text)}
+.head{display:flex;gap:26px;align-items:flex-start;flex-wrap:wrap}
+.head h1{margin:0 0 14px;font-size:31px;font-weight:400;line-height:1.18;letter-spacing:-.034em;text-wrap:balance}
+.facts{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.facts a{color:var(--muted)}
+.facts a:hover{color:var(--text)}
+.facts b{font-weight:500;color:var(--accent)}
+.body{
+  max-width:68ch;margin:20px 0 0;padding:16px 18px;background:var(--panel);
+  border-left:2px solid var(--line-2);color:var(--muted);font-weight:300;font-size:14.5px;line-height:1.7;
+}
+.body p{margin:0 0 12px}
+.body p:last-child{margin-bottom:0}
+.body a{color:var(--accent-2);text-decoration:underline;text-underline-offset:3px}
+
+.cmts-head{
+  display:flex;align-items:center;gap:14px;padding:12px 26px;
+  background:var(--panel);border-top:1px solid var(--line-2);border-bottom:1px solid var(--line-2);
+}
+.cmts-head h2{margin:0;font-size:14px;font-weight:600;letter-spacing:-.01em}
+
+.c{padding:15px 0 3px;border-top:1px solid var(--line)}
+.c:first-child{border-top:0}
+.c .c{border-top:0;border-left:2px solid var(--line);padding:13px 0 0 18px;margin-left:1px}
+.c .c:hover{border-left-color:var(--accent)}
+.chead{display:flex;align-items:center;gap:9px;margin-bottom:6px;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.chead .who{font-weight:500;color:var(--text)}
+.chead .who:hover{color:var(--accent-2)}
+.tg{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--faint);border:1px solid var(--line-2);border-radius:2px;padding:1px 6px}
+.tg:hover{border-color:var(--accent);color:var(--text)}
+.ctext{max-width:72ch;font-size:14.5px;font-weight:300;line-height:1.68;overflow-wrap:anywhere}
+.ctext p{margin:0 0 11px}
+.ctext p:last-child{margin-bottom:0}
+.ctext a{color:var(--accent-2);text-decoration:underline;text-underline-offset:3px}
+.ctext code{font-family:var(--mono);font-size:13px}
+.ctext pre{overflow-x:auto;background:var(--panel);border:1px solid var(--line);padding:12px;font-family:var(--mono);font-size:12.5px;line-height:1.5}
+.cact{display:flex;gap:14px;margin:8px 0 2px}
+.cact button{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.cact button:hover{color:var(--text)}
+.expand{display:inline-block;margin:8px 0 10px;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-2);border:1px solid var(--line-2);border-radius:2px;padding:5px 10px}
+.expand:hover{border-color:var(--text);color:var(--text)}
+.gone{color:var(--faint);font-style:italic}
+
+/* ==========================================================================
+   Profile / states
+   ========================================================================== */
+.prof{display:flex;gap:40px;align-items:flex-end;flex-wrap:wrap}
+.prof h1{margin:0 0 2px;font-size:29px;font-weight:400;letter-spacing:-.03em}
+.figs{display:flex;gap:1px;background:var(--line);border:1px solid var(--line)}
+.fig{padding:11px 20px;background:var(--panel);text-align:right}
+.fig b{display:block;font-family:var(--mono);font-size:21px;font-weight:500;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+
+.wide{
+  display:block;width:100%;padding:15px;background:var(--panel);border-top:1px solid var(--line-2);
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+}
+.wide:hover{color:var(--text);background:var(--panel)}
+.blank{padding:64px 26px;max-width:50ch}
+.blank b{display:block;font-size:19px;font-weight:400;letter-spacing:-.025em;margin-bottom:8px}
+.blank p{margin:0;color:var(--muted);font-weight:300}
+.sk{display:grid;grid-template-columns:var(--gut) 1fr;border-bottom:1px solid var(--line)}
+.sk .skg{border-right:1px solid var(--line);padding:16px 14px 16px 0}
+.sk .skb{padding:16px 20px}
+.sk i{display:block;background:var(--line);height:10px;animation:p 1.5s ease-in-out infinite}
+@keyframes p{0%,100%{opacity:1}50%{opacity:.4}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ==========================================================================
+   Colophon
+   ========================================================================== */
+.foot{background:var(--shell);border-top:1px solid var(--line-2)}
+.foot-in{max-width:1400px;margin:0 auto;padding:24px 26px 38px;display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+.foot p{margin:0;max-width:52ch;font-size:11.5px;line-height:1.65;color:var(--faint);font-family:var(--mono);letter-spacing:.02em}
+.foot nav{display:flex;gap:18px;flex-wrap:wrap}
+
+@media (max-width:920px){
+  .shell{grid-template-columns:1fr}
+  .main{border-right:0}
+  .brand{width:auto;border-right:0;padding:0 16px}
+  .side{
+    position:fixed;inset:0 auto 0 0;width:250px;z-index:100;
+    transform:translateX(-101%);transition:transform .22s ease;max-height:none;
+    border-right:1px solid var(--line-2);
+  }
+  .side.open{transform:none}
+  .burger{display:grid;margin-left:14px}
+  .brand b{display:none}
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:90}
+  .search{padding:0 14px}.search svg{left:14px}.top-act{padding:0 14px}
+}
+@media (max-width:620px){
+  :root{--gut:50px}
+  .head h1{font-size:24px}
+  .search .k{display:none}
+  .bar{padding:10px 16px;gap:12px}
+  .pad,.blank{padding:20px 16px}
+  .cmts-head{padding:11px 16px}
+  .rbody{padding:13px 14px}
+  .foot-in{padding:20px 16px 32px}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+ <div class="top-in">
+  <a class="brand" href="#/top">
+    <span class="mark">Y</span><b>Hacker News</b>
+  </a>
+  <button class="ib burger" id="menuBtn" aria-label="Open sections">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="17" height="17"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+  </button>
+
+  <form class="search" id="searchForm" role="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
+    <input id="q" type="search" placeholder="Search every story and comment since 2006" autocomplete="off" aria-label="Search Hacker News">
+    <span class="k lbl">⌘K</span>
+  </form>
+
+  <div class="top-act">
+    <button class="ib" id="themeBtn" aria-label="Toggle theme"></button>
+    <a class="lnk" href="https://news.ycombinator.com" target="_blank" rel="noopener">HN ↗</a>
+  </div>
+ </div>
+</header>
+
+<div class="shell">
+  <aside class="side" id="side">
+    <span class="sec-h lbl">Feeds</span>
+    <nav class="nav" id="feedNav"></nav>
+    <span class="sec-h lbl">Library</span>
+    <nav class="nav" id="libNav"></nav>
+    <span class="sec-h lbl">Reference</span>
+    <nav class="nav">
+      <a href="https://news.ycombinator.com/newsguidelines.html" target="_blank" rel="noopener"><i>01</i>Guidelines</a>
+      <a href="https://news.ycombinator.com/newsfaq.html" target="_blank" rel="noopener"><i>02</i>FAQ</a>
+      <a href="https://github.com/HackerNews/API" target="_blank" rel="noopener"><i>03</i>API</a>
+      <a href="https://hnrss.github.io/" target="_blank" rel="noopener"><i>04</i>RSS</a>
+    </nav>
+    <span class="sec-h lbl">Colophon</span>
+    <div class="sidenote">
+      <p>A reading room for the front page. Live from the public API, no account, no votes.</p>
+      <span class="lbl">Y Combinator · est. 2007</span>
+    </div>
+  </aside>
+
+  <main class="main" id="view"></main>
+</div>
+
+<footer class="foot">
+  <div class="foot-in">
+    <p>Stories and comments are read live from the Hacker News Firebase API and the Algolia search index. Nothing is cached, reordered or editorialised.</p>
+    <span class="grow"></span>
+    <nav>
+      <a class="lbl" href="#/top">Top</a>
+      <a class="lbl" href="#/search?q=">Search</a>
+      <a class="lbl" href="https://github.com/HackerNews/API" target="_blank" rel="noopener">API ↗</a>
+      <a class="lbl" href="https://news.ycombinator.com" target="_blank" rel="noopener">News.YC ↗</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+'use strict';
+
+/* =========================================================================
+   API — Firebase for live ranked feeds and records, Algolia for search,
+   time windows and whole comment trees.
+   ====================================================================== */
+const FB = 'https://hacker-news.firebaseio.com/v0';
+const AL = 'https://hn.algolia.com/api/v1';
+const jget = (u) => fetch(u).then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+
+const api = {
+  feedIds: (list) => jget(`${FB}/${list}.json`),
+  item:    (id)   => jget(`${FB}/item/${id}.json`),
+  user:    (id)   => jget(`${FB}/user/${encodeURIComponent(id)}.json`),
+  tree:    (id)   => jget(`${AL}/items/${id}`),
+  search:  (p)    => jget(`${AL}/${p.byDate ? 'search_by_date' : 'search'}?` + new URLSearchParams({
+                       query: p.query || '', tags: p.tags || 'story',
+                       hitsPerPage: p.hitsPerPage || 30, page: p.page || 0,
+                       ...(p.numericFilters ? {numericFilters: p.numericFilters} : {}),
+                     })),
+};
+
+const FEEDS = {
+  top : {label:'Top',  list:'topstories',  tag:'story'},
+  new : {label:'New',  list:'newstories',  tag:'story', byDate:true},
+  best: {label:'Best', list:'beststories', tag:'story'},
+  ask : {label:'Ask',  list:'askstories',  tag:'ask_hn'},
+  show: {label:'Show', list:'showstories', tag:'show_hn'},
+  jobs: {label:'Jobs', list:'jobstories',  tag:'job'},
+};
+const RANGES = {day:'24 Hours', week:'Week', month:'Month', all:'All Time'};
+const SECONDS = {day:86400, week:604800, month:2592000};
+
+/* ---- persistence ------------------------------------------------------ */
+const store = {
+  get(k,d){ try{ const v = localStorage.getItem('hn:'+k); return v===null?d:JSON.parse(v); }catch{ return d; } },
+  set(k,v){ try{ localStorage.setItem('hn:'+k, JSON.stringify(v)); }catch{} },
+};
+const seen = new Set(store.get('seen', []));
+const markSeen = (id) => { seen.add(id); store.set('seen', [...seen].slice(-800)); };
+
+/* ---- library: saved stories and followed authors ----------------------
+   Both live only in this browser. There is no HN account to sync with, so
+   the library is the account: no password, no server, no sync. */
+let saved   = store.get('saved', []);            // full story records
+let follows = store.get('follows', []);          // usernames
+const storyIndex = new Map();                    // id -> story, for actions
+
+const isSaved  = (id) => saved.some(x => x.id === id);
+const isFollowed = (u) => follows.includes(u);
+
+function toggleSave(id){
+  if(isSaved(id)) saved = saved.filter(x => x.id !== id);
+  else {
+    const s = storyIndex.get(id);
+    if(!s) return false;
+    saved = [{...s, savedAt: Math.floor(Date.now()/1000)}, ...saved].slice(0, 500);
+  }
+  store.set('saved', saved);
+  paintLibrary(route());
+  return isSaved(id);
+}
+function toggleFollow(u){
+  if(!u) return false;
+  follows = isFollowed(u) ? follows.filter(x => x !== u) : [...follows, u].slice(0, 100);
+  store.set('follows', follows);
+  paintLibrary(route());
+  return isFollowed(u);
+}
+
+/* ---- helpers ---------------------------------------------------------- */
+const $ = (s, r=document) => r.querySelector(s);
+const esc = (s='') => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = (n) => String(n).padStart(2,'0');
+
+function ago(ts){
+  const s = Math.max(1, Math.floor(Date.now()/1000 - ts));
+  for(const [n,l] of [[31536000,'y'],[2592000,'mo'],[604800,'w'],[86400,'d'],[3600,'h'],[60,'m']])
+    if(s >= n) return Math.floor(s/n) + l;
+  return s + 's';
+}
+function host(url){ if(!url) return ''; try{ return new URL(url).hostname.replace(/^www\./,''); }catch{ return ''; } }
+
+/* HN emits a narrow subset of HTML; allowlist it before insertion. */
+function safeHTML(html=''){
+  const box = document.createElement('div');
+  box.innerHTML = html;
+  box.querySelectorAll('*').forEach(el => {
+    if(!['P','A','I','B','EM','STRONG','PRE','CODE','BR','DIV','SPAN'].includes(el.tagName)){ el.replaceWith(...el.childNodes); return; }
+    [...el.attributes].forEach(a => { if(!(el.tagName==='A' && a.name==='href')) el.removeAttribute(a.name); });
+    if(el.tagName === 'A'){
+      const href = el.getAttribute('href') || '';
+      if(!/^https?:/i.test(href)) el.replaceWith(...el.childNodes);
+      else { el.target = '_blank'; el.rel = 'noopener noreferrer'; }
+    }
+  });
+  return box.innerHTML;
+}
+
+/* ---- theme ------------------------------------------------------------ */
+const SUN  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/></svg>';
+const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>';
+function applyTheme(t){
+  if(t) document.documentElement.setAttribute('data-theme', t);
+  else document.documentElement.removeAttribute('data-theme');
+  const dark = t ? t==='dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  $('#themeBtn').innerHTML = dark ? SUN : MOON;
+}
+applyTheme(store.get('theme', null));
+$('#themeBtn').onclick = () => {
+  const el = document.documentElement;
+  const dark = el.getAttribute('data-theme')==='dark'
+    || (!el.hasAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+  const next = dark ? 'light' : 'dark';
+  store.set('theme', next); applyTheme(next);
+};
+
+/* =========================================================================
+   Router
+   ====================================================================== */
+function route(){
+  const raw = (location.hash || '#/top').slice(1);
+  const [path, qs] = raw.split('?');
+  const seg = path.split('/').filter(Boolean);
+  return { name: seg[0]||'top', arg: seg[1] ? decodeURIComponent(seg[1]) : '', params: new URLSearchParams(qs||'') };
+}
+const go = (h) => { location.hash = h; };
+const view = $('#view');
+let token = 0;
+
+async function render(){
+  const me = ++token, r = route();
+  closePop();
+  $('#side').classList.remove('open'); document.querySelector('.scrim')?.remove();
+  paintNav(r);
+  scrollTo(0,0);
+  try{
+    if(r.name === 'saved')            viewSaved();
+    else if(r.name === 'following') await viewFollowing(me);
+    else if(r.name === 'item')      await viewItem(r, me);
+    else if(r.name === 'user')   await viewUser(r, me);
+    else if(r.name === 'search') await viewSearch(r, me);
+    else                         await viewFeed(r, me);
+  }catch(err){
+    if(me !== token) return;
+    view.innerHTML = `<div class="blank"><b>Hacker News didn't answer</b>
+      <p>${esc(err.message)} — the API may be rate-limiting, or the connection dropped.</p>
+      <button class="wide" style="margin-top:22px;border:1px solid var(--line-2)" onclick="location.reload()">Try again</button></div>`;
+  }
+}
+function paintNav(r){
+  const nav = $('#feedNav');
+  if(!nav.children.length){
+    nav.innerHTML = Object.entries(FEEDS).map(([k,f],i) =>
+      `<a href="#/${k}" data-feed="${k}"><i>${pad(i+1)}</i>${f.label}</a>`).join('');
+  }
+  // Move the active state only — rebuilding the markup repaints the sidebar.
+  nav.querySelectorAll('[data-feed]').forEach(a => a.classList.toggle('on', a.dataset.feed === r.name));
+  paintLibrary(r);
+  const q = $('#q'), want = r.name === 'search' ? (r.params.get('q')||'') : '';
+  if(q.value !== want && document.activeElement !== q) q.value = want;
+}
+function paintLibrary(r){
+  $('#libNav').innerHTML = `
+    <a href="#/saved" class="${r.name==='saved'?'on':''}"><i>${SAVE_ICON_S}</i>Saved<b class="cnt">${saved.length}</b></a>
+    <a href="#/following" class="${r.name==='following'?'on':''}"><i>${FOLLOW_ICON_S}</i>Following<b class="cnt">${follows.length}</b></a>`;
+}
+const SAVE_ICON_S = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="13" height="13"><path d="M6 4h12v16l-6-4.5L6 20z"/></svg>';
+const FOLLOW_ICON_S = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="13" height="13"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg>';
+const BOOKMARK = '<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" width="14" height="14"><path d="M6 4h12v16l-6-4.5L6 20z"/></svg>';
+
+const skeleton = (n=9) => `<div class="rows">${Array.from({length:n}, () => `
+  <div class="sk"><div class="skg"><i style="width:70%;margin-left:30%"></i></div>
+  <div class="skb"><i style="width:${42+Math.random()*38}%"></i><i style="width:24%;height:8px;margin-top:9px"></i></div></div>`).join('')}</div>`;
+
+/* =========================================================================
+   Feed
+   ====================================================================== */
+const feed = { range: store.get('range','all'), mode: store.get('mode','list'), page:0, items:[], ids:[] };
+
+async function viewFeed(r, me){
+  const key = FEEDS[r.name] ? r.name : 'top';
+  feed.page = 0; feed.items = []; feed.ids = [];
+
+  view.innerHTML = controls(key) + `<div id="slot">${skeleton()}</div>`;
+  wireControls(key);
+
+  const batch = await page(key, 0);
+  if(me !== token) return;
+  feed.items = batch;
+  paintRows(batch, key);
+}
+
+/* Reload just the list. Re-rendering the whole view would rebuild the sticky
+   control strip mid-scroll, which is what made the page jump. */
+async function reloadList(key){
+  const me = ++token;
+  const slot = $('#slot');
+  // Pin the current height while the skeleton is in place. Without this the
+  // document shrinks, the browser clamps scrollY, and the page visibly jumps
+  // up and then back down when the new rows arrive.
+  slot.style.minHeight = slot.offsetHeight + 'px';
+
+  feed.page = 0; feed.items = []; feed.ids = [];
+  slot.innerHTML = skeleton();
+  const batch = await page(key, 0).catch(() => []);
+  if(me !== token){ slot.style.minHeight = ''; return; }
+  feed.items = batch;
+  paintRows(batch, key);
+  $('#slot').style.minHeight = '';
+}
+
+async function page(key, p){
+  const f = FEEDS[key], PER = 30;
+  if(feed.range !== 'all'){
+    const since = Math.floor(Date.now()/1000) - SECONDS[feed.range];
+    const res = await api.search({tags:f.tag, page:p, hitsPerPage:PER, byDate:!!f.byDate, numericFilters:`created_at_i>${since}`});
+    return res.hits.map(fromHit);
+  }
+  if(!feed.ids.length) feed.ids = await api.feedIds(f.list);
+  const slice = feed.ids.slice(p*PER, p*PER + PER);
+  const items = await Promise.all(slice.map(id => api.item(id).catch(()=>null)));
+  return items.filter(Boolean).map(fromItem);
+}
+
+const fromItem = (it) => ({
+  id:it.id, title:it.title||'(untitled)', url:it.url||'', points:it.score||0, by:it.by||'',
+  time:it.time||0, comments:it.descendants ?? (it.kids?.length||0), type:it.type, text:it.text||'',
+});
+const fromHit = (h) => ({
+  id:Number(h.objectID), title:h.title||h.story_title||'(untitled)', url:h.url||h.story_url||'',
+  points:h.points||0, by:h.author||'', time:h.created_at_i||0, comments:h.num_comments||0,
+  type:'story', text:h.story_text||'', commentText:h.comment_text||'',
+});
+
+function controls(key){
+  return `<div class="bar">
+    <span class="lbl">Window</span>
+    <div class="opts">${Object.entries(RANGES).map(([k,l]) =>
+      `<button data-range="${k}" class="${feed.range===k?'on':''}">${l}</button>`).join('')}</div>
+    <span class="grow"></span>
+    <div class="opts">
+      <button data-mode="list" class="${feed.mode==='list'?'on':''}">List</button>
+      <button data-mode="cards" class="${feed.mode==='cards'?'on':''}">Grid</button>
+    </div>
+  </div>`;
+}
+function wireControls(key){
+  view.querySelectorAll('[data-range]').forEach(b => b.onclick = () => {
+    if(feed.range === b.dataset.range) return;
+    feed.range = b.dataset.range; store.set('range', feed.range);
+    view.querySelectorAll('[data-range]').forEach(x => x.classList.toggle('on', x === b));
+    reloadList(key);
+  });
+  view.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
+    feed.mode = b.dataset.mode; store.set('mode', feed.mode);
+    view.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x===b));
+    $('.rows')?.classList.toggle('cards', feed.mode==='cards');
+  });
+}
+
+function paintRows(items, key){
+  const slot = $('#slot') || view;
+  if(!items.length){
+    slot.innerHTML = `<div class="blank"><b>Nothing in this window</b><p>No stories were posted to this section in the selected period. Widen the range.</p></div>`;
+    return;
+  }
+  slot.innerHTML = `<div class="rows ${feed.mode==='cards'?'cards':''}">${items.map((s,i)=>rowHTML(s,i+1)).join('')}</div>
+    <button class="wide" id="more">Load 30 more</button>`;
+  wireRows(slot);
+  $('#more').onclick = async (e) => {
+    e.currentTarget.textContent = 'Loading…';
+    const next = await page(key, ++feed.page).catch(()=>[]);
+    feed.items = feed.items.concat(next);
+    paintRows(feed.items, key);
+  };
+}
+
+function rowHTML(s, rank){
+  const d = host(s.url);
+  storyIndex.set(s.id, s);          // so row actions can save without a refetch
+  return `<article class="row ${seen.has(s.id)?'seen':''} ${s.points>=1000?'hot':''}">
+    <div class="gut">
+      <span class="rk">${pad(rank)}</span>
+      <span class="sc">${s.points>=1000 ? (s.points/1000).toFixed(1)+'k' : s.points}</span>
+      <span class="pl">pts</span>
+    </div>
+    <div class="rbody">
+      <h3 class="hl"><a href="${s.url?esc(s.url):'#/item/'+s.id}" ${s.url?'target="_blank" rel="noopener"':''} data-story="${s.id}">${esc(s.title)}</a>${
+        d ? `<span class="dom">${esc(d)} ↗</span>` : `<span class="dom tag" style="margin-left:9px">discussion</span>`}</h3>
+      <div class="sub">
+        <a href="#/item/${s.id}">${s.comments} comment${s.comments===1?'':'s'}</a>
+        <s>/</s><span>${ago(s.time)} ago</span>
+        <s>/</s><a href="#/user/${encodeURIComponent(s.by)}">${esc(s.by)}</a>
+      </div>
+    </div>
+    <button class="bm ${isSaved(s.id)?'on':''}" data-save="${s.id}" aria-label="${isSaved(s.id)?'Remove from saved':'Save story'}" title="${isSaved(s.id)?'Saved':'Save'}" style="fill:${isSaved(s.id)?'currentColor':'none'}">${BOOKMARK}</button>
+    <button class="dots" data-menu="${s.id}" aria-label="Story actions">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+    </button>
+  </article>`;
+}
+
+function wireRows(root){
+  root.querySelectorAll('[data-story]').forEach(a => a.addEventListener('click', () => {
+    markSeen(Number(a.dataset.story)); a.closest('.row').classList.add('seen');
+  }));
+  root.querySelectorAll('[data-save]').forEach(b => b.onclick = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const id = Number(b.dataset.save);
+    const on = toggleSave(id);
+    b.classList.toggle('on', on);
+    b.style.fill = on ? 'currentColor' : 'none';
+    b.title = on ? 'Saved' : 'Save';
+    toast(on ? 'Saved to your library.' : 'Removed from saved.');
+    if(route().name === 'saved' && !on) b.closest('.row').remove();
+  });
+  root.querySelectorAll('[data-menu]').forEach(b => b.onclick = (e) => {
+    e.preventDefault(); e.stopPropagation(); openPop(b, Number(b.dataset.menu));
+  });
+}
+
+let pop = null;
+const closePop = () => { pop?.remove(); pop = null; };
+document.addEventListener('click', closePop);
+function openPop(anchor, id){
+  closePop();
+  const row = anchor.closest('.row');
+  const href = row.querySelector('.hl a').getAttribute('href');
+  pop = document.createElement('div');
+  pop.className = 'pop';
+  const by = storyIndex.get(id)?.by || '';
+  pop.innerHTML = `<button data-a="c">Open discussion</button>
+    ${href.startsWith('http') ? '<button data-a="l">Open article ↗</button>' : ''}
+    <button data-a="s">${isSaved(id) ? 'Remove from saved' : 'Save story'}</button>
+    ${by ? `<button data-a="f">${isFollowed(by) ? 'Unfollow' : 'Follow'} ${esc(by)}</button>` : ''}
+    <button data-a="h">View on news.yc ↗</button>
+    <button data-a="p">Copy link</button>`;
+  pop.onclick = (e) => {
+    const a = e.target.dataset?.a; if(!a) return;
+    if(a==='c') go(`#/item/${id}`);
+    if(a==='l'){ const w = open(href, '_blank'); if(w) w.opener = null; }
+    if(a==='h'){ const w = open(`https://news.ycombinator.com/item?id=${id}`, '_blank'); if(w) w.opener = null; }
+    if(a==='s'){
+      const on = toggleSave(id);
+      const btn = row.querySelector('[data-save]');
+      if(btn){ btn.classList.toggle('on', on); btn.style.fill = on ? 'currentColor' : 'none'; }
+      toast(on ? 'Saved to your library.' : 'Removed from saved.');
+      if(route().name === 'saved' && !on) row.remove();
+    }
+    if(a==='f'){ toast(toggleFollow(by) ? `Following ${by}.` : `Unfollowed ${by}.`); }
+    if(a==='p'){ navigator.clipboard?.writeText(`https://news.ycombinator.com/item?id=${id}`); e.target.textContent='Copied'; return; }
+    closePop();
+  };
+  row.appendChild(pop);
+  pop.style.top = (anchor.getBoundingClientRect().bottom - row.getBoundingClientRect().top + 4) + 'px';
+}
+
+/* =========================================================================
+   Story + comments
+   ====================================================================== */
+async function viewItem(r, me){
+  const id = Number(r.arg);
+  view.innerHTML = `<div class="pad"><a class="back lbl" href="javascript:history.back()">← Back</a></div>` + skeleton(4);
+  const [item, tree] = await Promise.all([api.item(id).catch(()=>null), api.tree(id).catch(()=>null)]);
+  if(me !== token) return;
+  if(!item && !tree){ view.innerHTML = `<div class="blank"><b>No such item</b><p>Nothing lives at id ${id}.</p></div>`; return; }
+
+  const s = item ? fromItem(item)
+                 : fromHit({objectID:id, title:tree.title, url:tree.url, points:tree.points, author:tree.author, created_at_i:tree.created_at_i});
+  markSeen(s.id);
+  const d = host(s.url);
+
+  view.innerHTML = `
+    <div class="pad">
+      <a class="back lbl" href="javascript:history.back()">← Back</a>
+      <div class="head">
+        <div style="flex:1;min-width:260px">
+          <h1>${esc(s.title)}</h1>
+          <div class="facts">
+            ${d ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(d)} ↗</a><s style="opacity:.4">/</s>` : ''}
+            <b>${s.points} points</b><s style="opacity:.4">/</s>
+            <a href="#/user/${encodeURIComponent(s.by)}">${esc(s.by)}</a><s style="opacity:.4">/</s>
+            <span>${ago(s.time)} ago</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="follow ${isSaved(s.id)?'on':''}" id="saveBtn">${isSaved(s.id)?'Saved ✓':'Save'}</button>
+          <a class="lnk" href="https://news.ycombinator.com/item?id=${s.id}" target="_blank" rel="noopener">Open on HN ↗</a>
+        </div>
+      </div>
+      ${item?.text ? `<div class="body">${safeHTML(item.text)}</div>` : ''}
+    </div>
+    <div class="cmts-head"><h2>${s.comments} comment${s.comments===1?'':'s'}</h2><span class="lbl">Read only</span></div>
+    <div class="pad" id="cmts"></div>`;
+
+  storyIndex.set(s.id, s);
+  $('#saveBtn').onclick = (e) => {
+    const on = toggleSave(s.id);
+    e.currentTarget.classList.toggle('on', on);
+    e.currentTarget.textContent = on ? 'Saved ✓' : 'Save';
+    toast(on ? 'Saved to your library.' : 'Removed from saved.');
+  };
+
+  const kids = tree?.children || [];
+  const box = $('#cmts');
+  if(!kids.length){
+    box.innerHTML = `<div class="blank" style="padding:48px 0"><b>No comments yet</b><p>Nothing has been posted on this thread.</p></div>`;
+    return;
+  }
+  box.innerHTML = kids.map(c => cHTML(c, 0)).join('');
+  wireComments(box);
+}
+
+const SHOWN = 3;
+function cHTML(c, depth){
+  const gone = !c.author || c.text == null;
+  const kids = c.children || [];
+  const show = depth === 0 ? kids : kids.slice(0, SHOWN);
+  const rest = kids.length - show.length;
+  const n = countKids(c);
+  return `<div class="c">
+    <div class="chead">
+      ${gone ? '' : `<a class="who" href="#/user/${encodeURIComponent(c.author)}">${esc(c.author)}</a>`}
+      <span>${c.created_at_i ? ago(c.created_at_i)+' ago' : ''}</span>
+      ${n ? `<button class="tg" data-toggle>− ${n}</button>` : ''}
+    </div>
+    <div class="kid">
+      <div class="ctext">${gone ? '<span class="gone">[ removed ]</span>' : safeHTML(c.text)}</div>
+      <div class="cact"><button data-perma="${c.id}">Permalink</button><button data-copy="${c.id}">Copy</button></div>
+      ${show.map(k => cHTML(k, depth+1)).join('')}
+      ${rest > 0 ? `<button class="expand" data-expand='${esc(JSON.stringify(kids.slice(SHOWN).map(k=>k.id)))}'>Load ${rest} more repl${rest===1?'y':'ies'} →</button>` : ''}
+    </div>
+  </div>`;
+}
+function countKids(c){ return (c.children||[]).reduce((n,k)=>n+1+countKids(k), 0); }
+
+function wireComments(root){
+  root.querySelectorAll('[data-toggle]').forEach(b => b.onclick = () => {
+    const kid = b.closest('.c').querySelector('.kid');
+    kid.hidden = !kid.hidden;
+    b.textContent = (kid.hidden ? '+ ' : '− ') + b.textContent.slice(2);
+  });
+  root.querySelectorAll('[data-perma]').forEach(b => b.onclick = () => { const w = open(`https://news.ycombinator.com/item?id=${b.dataset.perma}`, '_blank'); if(w) w.opener = null; });
+  root.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => {
+    navigator.clipboard?.writeText(`https://news.ycombinator.com/item?id=${b.dataset.copy}`); b.textContent = 'Copied';
+  });
+  root.querySelectorAll('[data-expand]').forEach(b => b.onclick = async () => {
+    const ids = JSON.parse(b.dataset.expand);
+    b.textContent = 'Loading…';
+    const nodes = await Promise.all(ids.map(id => api.tree(id).catch(()=>null)));
+    const frag = document.createElement('div');
+    frag.innerHTML = nodes.filter(Boolean).map(n => cHTML(n, 1)).join('');
+    wireComments(frag);
+    b.replaceWith(...frag.childNodes);
+  });
+}
+
+/* =========================================================================
+   Search
+   ====================================================================== */
+const sq = { tags:'story', sort:'relevance', page:0, hits:[] };
+const SCOPES = [['story','Stories'],['comment','Comments'],['(story,comment)','Everything'],['ask_hn','Ask HN'],['show_hn','Show HN']];
+
+async function viewSearch(r, me){
+  const query = r.params.get('q') || '';
+  sq.page = 0; sq.hits = [];
+
+  view.innerHTML = `
+    <div class="bar">
+      <span class="lbl">Scope</span>
+      <div class="opts">${SCOPES.map(([v,l]) => `<button data-tags="${v}" class="${sq.tags===v?'on':''}">${l}</button>`).join('')}</div>
+      <span class="grow"></span>
+      <div class="opts">
+        <button data-sort="relevance" class="${sq.sort==='relevance'?'on':''}">Relevance</button>
+        <button data-sort="date" class="${sq.sort==='date'?'on':''}">Newest</button>
+      </div>
+    </div>
+    ${query ? '<div class="strip"><span class="note" id="hits">Searching…</span></div>' : ''}
+    <div id="slot">${query ? skeleton(7) : ''}</div>`;
+
+  view.querySelectorAll('[data-tags]').forEach(b => b.onclick = () => { sq.tags = b.dataset.tags; render(); });
+  view.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { sq.sort = b.dataset.sort; render(); });
+
+  if(!query){
+    $('#slot').innerHTML = `<div class="blank"><b>Search all of Hacker News</b>
+      <p>Every story and comment since 2006, indexed by Algolia — the search the front page never gives you. Press ⌘K and type.</p></div>`;
+    return;
+  }
+
+  const res = await api.search({query, tags:sq.tags, byDate:sq.sort==='date', page:0, hitsPerPage:30});
+  if(me !== token) return;
+  sq.hits = res.hits.map(fromHit);
+  $('#hits').textContent = `${res.nbHits.toLocaleString()} results for “${query}” · ${res.processingTimeMS}ms`;
+  paintSearch(query);
+}
+
+function paintSearch(query){
+  const slot = $('#slot');
+  if(!sq.hits.length){
+    slot.innerHTML = `<div class="blank"><b>No matches</b><p>Nothing indexed for “${esc(query)}”. Try fewer words, or change the scope above.</p></div>`;
+    return;
+  }
+  slot.innerHTML = `<div class="rows">${sq.hits.map((s,i) => sq.tags==='comment' ? cHitHTML(s) : rowHTML(s,i+1)).join('')}</div>
+    <button class="wide" id="more">Load 30 more</button>`;
+  wireRows(slot);
+  $('#more').onclick = async (e) => {
+    e.currentTarget.textContent = 'Loading…';
+    const res = await api.search({query, tags:sq.tags, byDate:sq.sort==='date', page:++sq.page, hitsPerPage:30}).catch(()=>({hits:[]}));
+    sq.hits = sq.hits.concat(res.hits.map(fromHit));
+    paintSearch(query);
+  };
+}
+
+function cHitHTML(s){
+  return `<article class="row" style="grid-template-columns:minmax(0,1fr)">
+    <div class="rbody">
+      <div class="sub" style="margin:0 0 8px">
+        <a href="#/user/${encodeURIComponent(s.by)}">${esc(s.by)}</a>
+        <s>/</s><span>${ago(s.time)} ago</span>
+        <s>/</s><a href="#/item/${s.id}">on “${esc((s.title||'').slice(0,68))}”</a>
+      </div>
+      <div class="ctext">${safeHTML((s.commentText||'').slice(0,560))}</div>
+    </div>
+  </article>`;
+}
+
+/* =========================================================================
+   Library — saved stories and followed authors, held in this browser only
+   ====================================================================== */
+function viewSaved(){
+  view.innerHTML = `
+    <div class="bar">
+      <span class="lbl">Saved</span>
+      <span class="note">${saved.length} ${saved.length===1?'story':'stories'} in this browser</span>
+      <span class="grow"></span>
+      ${saved.length ? '<div class="opts"><button id="clearSaved">Clear all</button></div>' : ''}
+    </div>
+    <div id="slot"></div>`;
+
+  const slot = $('#slot');
+  if(!saved.length){
+    slot.innerHTML = `<div class="blank"><b>Nothing saved yet</b>
+      <p>Use the bookmark on any story to keep it here. Saved stories live in this browser only — no account, nothing sent anywhere.</p></div>`;
+    return;
+  }
+  slot.innerHTML = `<div class="rows">${saved.map((x,i) => rowHTML(x, i+1)).join('')}</div>`;
+  wireRows(slot);
+  $('#clearSaved').onclick = () => {
+    saved = []; store.set('saved', saved); toast('Saved stories cleared.'); render();
+  };
+}
+
+async function viewFollowing(me){
+  view.innerHTML = `
+    <div class="bar">
+      <span class="lbl">Following</span>
+      <span class="note">${follows.length} ${follows.length===1?'author':'authors'}</span>
+      <span class="grow"></span>
+    </div>
+    ${follows.length ? `<div class="strip">${follows.map(u =>
+      `<button class="follow on" data-unfollow="${esc(u)}" style="margin:0 6px 6px 0">${esc(u)} ×</button>`).join('')}</div>` : ''}
+    <div id="slot">${follows.length ? skeleton(6) : ''}</div>`;
+
+  view.querySelectorAll('[data-unfollow]').forEach(b => b.onclick = () => {
+    toggleFollow(b.dataset.unfollow); render();
+  });
+
+  if(!follows.length){
+    $('#slot').innerHTML = `<div class="blank"><b>You aren't following anyone</b>
+      <p>Open any author's profile and press Follow, or use a story's ⋯ menu. Their newest submissions will collect here.</p></div>`;
+    return;
+  }
+
+  // One Algolia query per author, merged newest-first.
+  const sets = await Promise.all(follows.map(u =>
+    api.search({query:'', tags:`author_${u},story`, hitsPerPage:10, byDate:true})
+       .then(r => r.hits.map(fromHit)).catch(() => [])));
+  if(me !== token) return;
+
+  const items = sets.flat().sort((a,b) => b.time - a.time);
+  const slot = $('#slot');
+  slot.innerHTML = items.length
+    ? `<div class="rows">${items.map((x,i) => rowHTML(x, i+1)).join('')}</div>`
+    : `<div class="blank"><b>No recent stories</b><p>Nobody you follow has submitted anything indexed yet.</p></div>`;
+  wireRows(slot);
+}
+
+/* =========================================================================
+   Profile
+   ====================================================================== */
+async function viewUser(r, me){
+  view.innerHTML = `<div class="pad"><a class="back lbl" href="javascript:history.back()">← Back</a></div>` + skeleton(3);
+  const [u, subs] = await Promise.all([
+    api.user(r.arg),
+    api.search({query:'', tags:`author_${r.arg},story`, hitsPerPage:20, byDate:true}).catch(()=>({hits:[]})),
+  ]);
+  if(me !== token) return;
+  if(!u){ view.innerHTML = `<div class="blank"><b>No such account</b><p>“${esc(r.arg)}” isn't a Hacker News user.</p></div>`; return; }
+
+  view.innerHTML = `
+    <div class="pad">
+      <a class="back lbl" href="javascript:history.back()">← Back</a>
+      <div class="prof">
+        <div><span class="lbl">Account</span><h1>${esc(u.id)}</h1>
+          <span class="note">joined ${new Date(u.created*1000).toLocaleDateString(undefined,{year:'numeric',month:'long'})}</span></div>
+        <span class="grow"></span>
+        <button class="follow ${isFollowed(u.id)?'on':''}" id="followBtn">${isFollowed(u.id)?'Following ✓':'Follow'}</button>
+        <div class="figs">
+          <div class="fig"><b>${(u.karma||0).toLocaleString()}</b><span class="lbl">Karma</span></div>
+          <div class="fig"><b>${(u.submitted?.length||0).toLocaleString()}</b><span class="lbl">Submitted</span></div>
+        </div>
+      </div>
+      ${u.about ? `<div class="body">${safeHTML(u.about)}</div>` : ''}
+    </div>
+    <div class="cmts-head"><h2>Recent stories</h2><span class="lbl">Newest first</span></div>
+    <div id="slot"></div>`;
+
+  $('#followBtn').onclick = (e) => {
+    const on = toggleFollow(u.id);
+    e.currentTarget.classList.toggle('on', on);
+    e.currentTarget.textContent = on ? 'Following ✓' : 'Follow';
+    toast(on ? `Following ${u.id}.` : `Unfollowed ${u.id}.`);
+  };
+
+  const items = subs.hits.map(fromHit);
+  const slot = $('#slot');
+  slot.innerHTML = items.length
+    ? `<div class="rows">${items.map((s,i)=>rowHTML(s,i+1)).join('')}</div>`
+    : `<div class="blank"><p>No submitted stories in the index.</p></div>`;
+  wireRows(slot);
+}
+
+/* =========================================================================
+   Wiring
+   ====================================================================== */
+$('#searchForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = $('#q').value.trim();
+  go(v ? `#/search?q=${encodeURIComponent(v)}` : '#/top');
+});
+let deb;
+$('#q').addEventListener('input', () => {
+  clearTimeout(deb);
+  const v = $('#q').value.trim();
+  if(!v) return;
+  deb = setTimeout(() => go(`#/search?q=${encodeURIComponent(v)}`), 420);
+});
+addEventListener('keydown', (e) => {
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); $('#q').focus(); $('#q').select(); }
+  if(e.key==='Escape' && document.activeElement===$('#q')) $('#q').blur();
+});
+$('#menuBtn').onclick = (e) => {
+  e.stopPropagation();
+  $('#side').classList.add('open');
+  const scrim = document.createElement('div');
+  scrim.className = 'scrim';
+  scrim.onclick = () => { $('#side').classList.remove('open'); scrim.remove(); };
+  document.body.appendChild(scrim);
+};
+
+/* Every outbound link leaves this window for a new tab. Some embedded
+   browsers ignore target="_blank", so drive it from script instead. */
+let toastTimer;
+function toast(msg){
+  clearTimeout(toastTimer);
+  document.querySelector('.toast')?.remove();
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  toastTimer = setTimeout(() => el.remove(), 4200);
+}
+document.addEventListener('click', (e) => {
+  const a = e.target.closest?.('a[target="_blank"]');
+  if(!a) return;
+  const href = a.getAttribute('href') || '';
+  if(!/^https?:/i.test(href)) return;
+  e.preventDefault();
+  const w = window.open(href, '_blank');
+  if(w) w.opener = null;
+  else toast('Pop-up blocked — allow pop-ups for this site to open articles.');
+});
+
+addEventListener('hashchange', render);
+render();
+</script>
+</body>
+</html>
