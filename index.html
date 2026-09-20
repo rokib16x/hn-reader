@@ -224,6 +224,15 @@ img{max-width:100%}
 .rows.cards .rbody{padding:7px 20px 16px}
 .rows.cards .dots{display:none}
 
+/* Wide screens: run the row as a single line — headline left, metadata flush
+   right — rather than a short title stranded against a wide empty margin.
+   The headline keeps a readable measure so long titles don't sprawl. */
+@media (min-width:1080px){
+  .rows:not(.cards) .split{display:flex;align-items:baseline;gap:36px}
+  .rows:not(.cards) .split .hl{flex:1 1 auto;min-width:0;max-width:76ch}
+  .rows:not(.cards) .split .sub{margin-top:0;flex:0 0 auto;white-space:nowrap}
+}
+
 /* ==========================================================================
    Menu / toast
    ========================================================================== */
@@ -691,7 +700,7 @@ function rowHTML(s, rank){
       <span class="sc">${s.points>=1000 ? (s.points/1000).toFixed(1)+'k' : s.points}</span>
       <span class="pl">pts</span>
     </div>
-    <div class="rbody">
+    <div class="rbody split">
       <h3 class="hl"><a href="${s.url?esc(s.url):'#/item/'+s.id}" ${s.url?'target="_blank" rel="noopener"':''} data-story="${s.id}">${esc(s.title)}</a>${
         d ? `<span class="dom">${esc(d)} ↗</span>` : `<span class="dom tag" style="margin-left:9px">discussion</span>`}</h3>
       <div class="sub">
