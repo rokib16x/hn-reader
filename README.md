@@ -4,6 +4,14 @@ A faster, searchable Hacker News front end. One self-contained `index.html` — 
 
 **[Live demo →](https://rokib16x.github.io/hn-reader/)**
 
+![HN Reader in list view, dark theme](docs/screenshot-dark.png)
+
+<p align="center"><em>List view, dark theme</em></p>
+
+![HN Reader in grid view, light theme](docs/screenshot-light.png)
+
+<p align="center"><em>Grid view, light theme</em></p>
+
 Hacker News has no search box. This adds one, along with time-window filtering, whole comment threads in a single request, and a library of saved stories and followed authors that lives entirely in your browser.
 
 ```bash
