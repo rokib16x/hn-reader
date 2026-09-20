@@ -2,6 +2,8 @@
 
 A faster, searchable Hacker News front end. One self-contained `index.html` — no build step, no dependencies, no framework, no account, no tracking.
 
+**[Live demo →](https://rokib16x.github.io/hn-reader/)**
+
 Hacker News has no search box. This adds one, along with time-window filtering, whole comment threads in a single request, and a library of saved stories and followed authors that lives entirely in your browser.
 
 ```bash
